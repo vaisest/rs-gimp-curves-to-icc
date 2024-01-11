@@ -13,8 +13,6 @@ struct Opt {
     icc_output: Option<PathBuf>,
 }
 
-fn linspace(start: u16, stop: u16) {}
-
 fn parse_u16_curve_vec(input: &str) -> Vec<u16> {
     return input
         .split(" ")
@@ -76,7 +74,7 @@ fn main() {
     let g_tc = ToneCurve::new_tabulated(&rgb_curves[1]);
     let b_tc = ToneCurve::new_tabulated(&rgb_curves[2]);
 
-    println!("{:?}", b_tc.estimated_entries());
+    // println!("{:?}", b_tc.estimated_entries());
 
     let tc_refs: [&lcms2::ToneCurveRef; 3] = [&r_tc, &g_tc, &b_tc];
     let vcgt_tag = Tag::VcgtCurves(tc_refs);
