@@ -44,15 +44,19 @@ fn parse_curves(text: String) -> Vec<Vec<u16>> {
         println!("Curve input is saved in linear light. The result might not look correct")
     }
 
-    let re = Regex::new(r"\(samples \d+ (.*)\)\)\n").unwrap();
-    // the values portion of (samples n value1 value2 value3...) in the file
+    // mR flags: multi-line and CRLF mode
+    let re = Regex::new(r"(?Rm)^ *\(samples \d+ (.*)\)\)$").unwrap();
+    // gets us the values portion of (samples n value1 value2 value3...) in the file
     let caps: Vec<&str> = re
         .captures_iter(&text)
         .map(|it| it.get(1).unwrap().as_str())
         .collect();
 
-    // 1 value curve (gray), and 3 colour curves (R, G, B)
-    assert!(caps.len() >= 4, "could not parse 4 curves from file");
+    // 1 value curve (gray), and 3 colour curves (R, G, B). Possibly also alpha but that is ignored
+    assert!(
+        caps.len() >= 4,
+        "Could not parse 4 curves from file. Exiting..."
+    );
 
     let gray = parse_u16_curve_vec(caps[0]);
     // GIMP doesn't seem to save curves of different accuracy

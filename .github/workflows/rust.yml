@@ -11,24 +11,22 @@ env:
 
 jobs:
   build:
-
-    runs-on: ubuntu-latest
-
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
     - name: Run tests
       run: cargo test --verbose
-    # build for Linux and Windows
-    - name: Build Windows
-      run: cargo build --verbose --release --target x86_64-pc-windows-msvc
-    - name: Build Linux
-      run: cargo build --verbose --release --target x86_64-unknown-linux-gnu
+    - name: Build
+      run: cargo build --verbose --release
     - name: Store builds
       uses: actions/upload-artifact@v4
       with:
-        name: dist-without-markdown
-        path: |
-          target/release/rs-gimp-to-icc
-          target/release/rs-gimp-to-icc.exe
+        name: build-${{matrix.os}}
+        # truly amazing
+        path: target/release/rs-gimp-to-icc${{matrix.os == 'windows-latest' && '.exe' || ''}}
+
 
     
