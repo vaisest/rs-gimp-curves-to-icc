@@ -10,6 +10,11 @@ struct Args {
     #[arg()]
     curves_input: PathBuf,
 
+    /// Toggle for sampling from 3D LUT input instead of GIMP curves.
+    /// Input must be in .cube format.
+    #[arg(long = "3dlut", default_value_t = false)]
+    input_is_3dlut: bool,
+
     /// Output file name
     #[arg(default_value = "out.icc")]
     icc_output: PathBuf,
@@ -76,6 +81,100 @@ fn parse_curves(text: String) -> Vec<Vec<u16>> {
         .collect::<Vec<Vec<u16>>>()
 }
 
+fn parse_3dlut(text: String) -> Vec<Vec<u16>> {
+    // this is not well parsed.
+    // full spec here: https://resolve.cafe/developers/luts/
+
+    // get LUT size
+    let size_re = Regex::new(r"LUT_3D_SIZE (\d+)").unwrap();
+
+    let lut_size = size_re
+        .captures(&text)
+        .expect("Input 3DLUT could not be parsed. Make sure it is in Resolve .cube format.")[1]
+        .parse::<usize>()
+        .unwrap();
+
+    // parses the lines of float triplets
+    // like "0.684306 0.927321 0.955734" or mixed with integers "0.1 0 1" or with exp notation "0.901122 7.62951e-05 0.583398"
+    let triplet_re = Regex::new(
+        r"(?i)(\d.\d+|\d|\d.\d+e-?\d+) (\d.\d+|\d|\d.\d+e-?\d+) (\d.\d+|\d|\d.\d+e-?\d+)",
+    )
+    .unwrap();
+
+    // idx for start of the data portion of the file
+    let idx_start = triplet_re.find(&text).unwrap().start();
+    let values = text[idx_start..]
+        .split_whitespace()
+        .filter_map(|it| it.parse::<f64>().ok());
+
+    let mut rgb_values: Vec<[f64; 3]> = Vec::with_capacity(lut_size.pow(3));
+
+    // chunking by 3 so we at least have a vec of triplets
+    let mut counter = 0;
+    let mut buffer = [0.0f64; 3];
+    for val in values {
+        buffer[counter] = val;
+
+        if counter == 2 {
+            counter = 0;
+            rgb_values.push(buffer);
+        } else {
+            counter += 1;
+        }
+    }
+
+    assert!(counter == 0);
+
+    assert_eq!(lut_size.pow(3), rgb_values.len());
+
+    let mut curves = Vec::new();
+
+    // channel we're sampling now. from red to blue
+    for channel in 0..=2 {
+        let mut curve = Vec::new();
+        for a in 0..=255 {
+            // scale a to 0..lut_size
+
+            // x is a point between n-1 and n. We will have to linearly interpolate
+            // this point x as the LUT is just lut_size values instead of 255 values
+            let x = (a as f64 / 255 as f64) * (lut_size - 1) as f64;
+            // n-1, or leftmost closest point
+            let ix = x as usize;
+            // distance of x from n
+            let dx = x - ix as f64;
+
+            let (left, right) = match channel {
+                // red
+                0 => (
+                    rgb_values[ix][channel],
+                    rgb_values[(ix + 1).clamp(0, lut_size - 1)][channel],
+                ),
+                // green
+                1 => (
+                    rgb_values[ix * lut_size][channel],
+                    rgb_values[(ix + 1).clamp(0, lut_size - 1) * lut_size][channel],
+                ),
+                // blue
+                2 => (
+                    rgb_values[ix * lut_size.pow(2)][channel],
+                    rgb_values[(ix + 1).clamp(0, lut_size - 1) * lut_size.pow(2)][channel],
+                ),
+                _ => unreachable!(),
+            };
+            // weigh closest two points based on distance of x from n
+            let val = left * dx + right * (1.0 - dx);
+            // sale to u16 range and output
+            println!(
+                "in: {a}, out: {}, x: {x}",
+                (val * u16::MAX as f64).round() as u16
+            );
+            curve.push((val * u16::MAX as f64).round() as u16);
+        }
+        curves.push(curve);
+    }
+    curves
+}
+
 fn main() {
     let args = Args::parse();
     let mut icc = Profile::new_srgb();
@@ -92,7 +191,13 @@ fn main() {
     let text = fs::read_to_string(&args.curves_input)
         .unwrap_or_else(|err| panic!("Could not read file {:?}: {}", args.curves_input, err));
 
-    let rgb_curves = parse_curves(text);
+    let rgb_curves = if args.input_is_3dlut {
+        parse_3dlut(text)
+    } else {
+        parse_curves(text)
+    };
+
+    println!("{rgb_curves:?}");
 
     let r_tc = ToneCurve::new_tabulated(&rgb_curves[0]);
     let g_tc = ToneCurve::new_tabulated(&rgb_curves[1]);
