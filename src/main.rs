@@ -18,7 +18,7 @@ struct Args {
     #[arg(
         short,
         long = "description",
-        default_value = "sRGB profile with VCGT from GIMP curve tool"
+        default_value = "Custom gamma ICC profile"
     )]
     description: String,
 }
